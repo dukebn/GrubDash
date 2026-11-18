@@ -113,19 +113,9 @@ function update(req, res) {
   res.json({ data: dishes[index] });
 }
 
-// DELETE /dishes/:dishId
-/*function destroy(req, res) {
-  const index = dishes.findIndex((dish) => dish.id === res.locals.dish.id);
-
-  dishes.splice(index, 1);
-
-  res.sendStatus(204);
-}*/
-
 module.exports = {
   list,
   read: [dishExists, read],
   create: [hasData, hasValidFields, create],
   update: [dishExists, hasData, idMatchesRoute, hasValidFields, update],
-  //delete: [dishExists, destroy],
 };
