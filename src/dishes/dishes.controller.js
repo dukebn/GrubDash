@@ -8,6 +8,8 @@ const nextId = require("../utils/nextId");
 
 // TODO: Implement the /dishes handlers needed to make the tests pass
 
+/* ---------- Middleware ---------- */
+
 function dishExists(req, res, next) {
   const { dishId } = req.params;
 
@@ -20,46 +22,79 @@ function dishExists(req, res, next) {
   }
 
   res.locals.dish = dish;
-
   next();
 }
 
-function list(req, res) {
-  res.json({ data: dishes });
+// Reads req.body.data once so later functions only use res.locals
+function hasData(req, res, next) {
+  const { data } = req.body;
+
+  if (!data || typeof data !== "object") {
+    return res.status(400).json({ error: "Request body must contain data" });
+  }
+
+  res.locals.data = data;
+  next();
 }
 
-function read(req, res) {
-  res.json({ data: res.locals.dish });
-}
+// Shared by create and update
+function hasValidFields(req, res, next) {
+  const { name, description, image_url, price } = res.locals.data;
 
-function create(req, res) {
-  const { data = {} } = req.body;
-  
-  if (!data.name) {
-    return res.status(400).json({
-      error: "Dish must include a name",
-    });
+  if (!name) {
+    return res.status(400).json({ error: "Dish must include a name" });
   }
-  
-  if (!data.description) {
-    return res.status(400).json({
-      error: "Dish must include a description",
-    });
+
+  if (!description) {
+    return res.status(400).json({ error: "Dish must include a description" });
   }
-  if (!data.image_url) {
-    return res.status(400).json({
-      error: "Dish must include a image_url",
-    });
+
+  if (!image_url) {
+    return res.status(400).json({ error: "Dish must include a image_url" });
   }
-  
-  if (data.price === undefined || data.price <= 0) {
+
+  if (typeof price !== "number" || price <= 0) {
     return res.status(400).json({
       error: "Dish must include a price greater than zero",
     });
   }
+
+  next();
+}
+
+// Only needed for update
+function idMatchesRoute(req, res, next) {
+  const { id } = res.locals.data;
+  const { dish } = res.locals;
+
+  if (id && id !== dish.id) {
+    return res.status(400).json({
+      error: `Dish id ${id} does not match route id ${dish.id}`,
+    });
+  }
+
+  next();
+}
+
+/* ---------- Route handlers ---------- */
+
+// GET /dishes
+function list(req, res) {
+  res.json({ data: dishes });
+}
+
+// GET /dishes/:dishId
+function read(req, res) {
+  res.json({ data: res.locals.dish });
+}
+
+// POST /dishes
+function create(req, res) {
+  const { data } = res.locals;
+
   const newDish = {
+    ...data,
     id: nextId(),
-    ...req.body.data,
   };
 
   dishes.push(newDish);
@@ -67,54 +102,19 @@ function create(req, res) {
   res.status(201).json({ data: newDish });
 }
 
-function update(req, res){
-  const { dishId } = req.params;
-  const { data = {} } = req.body;
-  
-  const index = dishes.findIndex((dish) => dish.id === res.locals.dish.id);
-  
-  // Check if supplied ID matches route ID
-  if (data.id && data.id !== dishId) {
-    return res.status(400).json({
-      error: `Dish id ${data.id} does not match routh id ${dishId}`,
-    });
-  }
-  
-  if (!data.name) {
-    return res.status(400).json({
-      error: "Dish must have a name",
-    });
-  }
-  
-  if (!data.description) {
-    return res.status(400).json({
-      error: "Dish must include a description",
-    });
-  }
-  if (!data.image_url) {
-    return res.status(400).json({
-      error: "Dish must include a image_url",
-    });
-  }
-  
-  if (typeof data.price !== "number" || data.price === undefined || data.price <= 0) {
-    return res.status(400).json({
-      error: "Dish must include a price greater than zero",
-    });
-  }
+// PUT /dishes/:dishId
+function update(req, res) {
+  const { dish, data } = res.locals;
 
-  const updatedDish = {
-    ...data,
-    id: dishId,
-  };
-  
-  dishes[index] = updatedDish;
-  
-  return res.json({ data: updatedDish });
+  const index = dishes.findIndex((d) => d.id === dish.id);
+
+  dishes[index] = { ...data, id: dish.id };
+
+  res.json({ data: dishes[index] });
 }
 
+// DELETE /dishes/:dishId
 function destroy(req, res) {
-
   const index = dishes.findIndex((dish) => dish.id === res.locals.dish.id);
 
   dishes.splice(index, 1);
@@ -125,7 +125,7 @@ function destroy(req, res) {
 module.exports = {
   list,
   read: [dishExists, read],
-  create,
-  update: [dishExists, update],
-  delete: [dishExists, destroy]
-}
+  create: [hasData, hasValidFields, create],
+  update: [dishExists, hasData, idMatchesRoute, hasValidFields, update],
+  delete: [dishExists, destroy],
+};
